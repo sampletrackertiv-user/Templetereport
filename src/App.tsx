@@ -90,7 +90,7 @@ const DEFAULT_REPORT: ReportData = {
   title: "Fabric Shrinkage Report",
   companyName: "Triumph International (Vietnam) Ltd",
   companyAddress: "No. 2, Street No. 3, Song Than 1 Industrial Zone, Binh Duong, Vietnam",
-  logo: "https://postimg.cc/5j92Zc75",
+  logo: "https://i.postimg.cc/7P0JJwSR/Triumphlogo-Red-RGB-LO-2.png",
   date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
   creator: "Bonding Technician",
   materialProperties: {
