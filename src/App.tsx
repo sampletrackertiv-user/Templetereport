@@ -1016,7 +1016,7 @@ export default function App() {
         <div className="mt-8 flex justify-center gap-6 text-[10px] text-stone-400 font-medium uppercase tracking-widest">
           <span className="flex items-center gap-1"><Info className="w-3 h-3" /> Auto-calculating shrinkage %</span>
           <span className="flex items-center gap-1"><Info className="w-3 h-3" /> Standard 30cm samples</span>
-          <span className="flex items-center gap-1"><Info className="w-3 h-3" /> ISO 9001 Compliant</span>
+          <span className="flex items-center gap-1"><Info className="w-3 h-3" /> TRIUMPH Vietnam</span>
         </div>
       </div>
 
