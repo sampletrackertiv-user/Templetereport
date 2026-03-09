@@ -125,7 +125,7 @@ const DEFAULT_REPORT: ReportData = {
       }
     ]
   },
-  remarks: "Heat press parameter 180 degrees, 30 seconds, 4 bar, only 1 layer (without glue)"
+  remarks: "Step 1: Heat press with glue,Step 2: Heat press with outer (double layer main item- with LN + glue+ outer)"
 };
 
 // --- Helper Functions ---
