@@ -13,8 +13,12 @@ import {
   FileText, 
   Printer,
   Info,
-  Save
+  Save,
+  ChevronRight,
+  Loader2
 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 // --- Types ---
 
@@ -140,7 +144,77 @@ const calculateDiff = (before: number, after: number) => {
 export default function App() {
   const [data, setData] = useState<ReportData>(DEFAULT_REPORT);
   const [isEditing, setIsEditing] = useState(true);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reportRef = useRef<HTMLDivElement>(null);
+  
+  const sections = [
+    { id: 'material', label: '1. Material' },
+    { id: 'method1', label: '2. Method 1' },
+    { id: 'method2', label: '3. Method 2' },
+    { id: 'remarks', label: '4. Remarks' },
+  ];
+
+  const scrollToSection = (id: string) => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const exportToPDF = async () => {
+    if (!reportRef.current) return;
+    
+    setIsGeneratingPDF(true);
+    try {
+      // Temporarily hide elements that shouldn't be in the PDF
+      const element = reportRef.current;
+      
+      // Use html2canvas to capture the report
+      // We use a higher scale for better clarity
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 1200 // Force a desktop-like width for consistent layout
+      });
+      
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+      
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      // Handle multi-page PDF if the report is long
+      let heightLeft = pdfHeight;
+      let position = 0;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+      
+      while (heightLeft >= 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+      
+      pdf.save(`${data.title.replace(/\s+/g, '_')}_${data.date.replace(/\s+/g, '_')}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try using the browser print option (Ctrl+P).');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -291,35 +365,60 @@ export default function App() {
       <div className="max-w-6xl mx-auto">
         
         {/* Toolbar */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-stone-200 sticky top-4 z-50">
-          <div className="flex items-center gap-2">
-            <FileText className="w-6 h-6 text-red-600" />
-            <h1 className="text-xl font-bold tracking-tight">Report Builder</h1>
+        <div className="mb-6 flex flex-col gap-4 bg-white p-4 rounded-xl shadow-sm border border-stone-200 sticky top-4 z-50 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <FileText className="w-6 h-6 text-red-600" />
+              <h1 className="text-xl font-bold tracking-tight">Report Builder</h1>
+            </div>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setIsEditing(!isEditing)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                  isEditing 
+                  ? 'bg-stone-900 text-white hover:bg-stone-800' 
+                  : 'bg-stone-200 text-stone-700 hover:bg-stone-300'
+                }`}
+              >
+                {isEditing ? <Save className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
+                {isEditing ? 'Preview Report' : 'Edit Mode'}
+              </button>
+              <button 
+                onClick={exportToPDF}
+                disabled={isGeneratingPDF}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isGeneratingPDF ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                {isGeneratingPDF ? 'Generating...' : 'Export PDF'}
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setIsEditing(!isEditing)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-                isEditing 
-                ? 'bg-stone-900 text-white hover:bg-stone-800' 
-                : 'bg-stone-200 text-stone-700 hover:bg-stone-300'
-              }`}
-            >
-              {isEditing ? <Save className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
-              {isEditing ? 'Preview Report' : 'Edit Mode'}
-            </button>
-            <button 
-              onClick={() => window.print()}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-all shadow-sm"
-            >
-              <Download className="w-4 h-4" />
-              Export PDF
-            </button>
+          
+          {/* Quick Nav */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar border-t border-stone-100 pt-3">
+            <span className="text-[10px] font-bold text-stone-400 uppercase whitespace-nowrap mr-2">Jump to:</span>
+            {sections.map(s => (
+              <button 
+                key={s.id}
+                onClick={() => scrollToSection(s.id)}
+                className="px-3 py-1 bg-stone-50 hover:bg-stone-100 text-stone-600 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors whitespace-nowrap border border-stone-200"
+              >
+                {s.label}
+              </button>
+            ))}
           </div>
         </div>
 
         {/* Report Content */}
-        <div id="report-container" className={`bg-white shadow-2xl rounded-sm overflow-hidden border border-stone-300 print:shadow-none print:border-none ${!isEditing ? 'cursor-default' : ''}`}>
+        <div 
+          ref={reportRef}
+          id="report-container" 
+          className={`bg-white shadow-2xl rounded-sm overflow-hidden border border-stone-300 print:shadow-none print:border-none ${!isEditing ? 'cursor-default' : ''}`}
+        >
           
           {/* Header Section */}
           <header className="p-8 border-b border-stone-200">
@@ -404,12 +503,15 @@ export default function App() {
           <main className="p-8 space-y-10">
             
             {/* 1. Material Properties */}
-            <section>
+            <section id="material" className="print-no-break">
               <h3 className="text-sm font-bold bg-stone-100 px-3 py-1 border-l-4 border-stone-900 mb-3 uppercase tracking-widest">
                 1. Material Properties
               </h3>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse border border-stone-300 text-xs">
+              <div className="overflow-x-auto relative group">
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 bg-stone-900/10 p-1 rounded-l md:hidden pointer-events-none">
+                  <ChevronRight className="w-4 h-4 text-stone-500 animate-pulse" />
+                </div>
+                <table className="w-full border-collapse border border-stone-300 text-xs min-w-[600px]">
                   <thead>
                     <tr className="bg-stone-50">
                       <th className="border border-stone-300 p-2 text-left font-bold uppercase">PLM No.</th>
@@ -473,7 +575,7 @@ export default function App() {
             </section>
 
             {/* 2. Method 1 */}
-            <section>
+            <section id="method1" className="print-no-break">
               <div className="flex justify-between items-center bg-stone-900 text-white px-4 py-2 mb-4">
                 <h3 className="text-sm font-bold uppercase tracking-widest">
                   Method 1: {isEditing ? (
@@ -491,8 +593,11 @@ export default function App() {
                 )}
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse border border-stone-300 text-[10px]">
+              <div className="overflow-x-auto relative group">
+                <div className="absolute right-0 top-1/2 -translate-y-1/2 bg-stone-900/10 p-1 rounded-l md:hidden pointer-events-none">
+                  <ChevronRight className="w-4 h-4 text-stone-500 animate-pulse" />
+                </div>
+                <table className="w-full border-collapse border border-stone-300 text-[10px] min-w-[800px]">
                   <thead>
                     <tr className="bg-stone-100">
                       <th rowSpan={2} className="border border-stone-300 p-1 font-bold uppercase">Color Code</th>
@@ -593,9 +698,9 @@ export default function App() {
               </div>
 
               {/* Method 1 Photos */}
-              <div className="mt-6 space-y-8">
+              <div className="mt-6 space-y-8 print-no-break">
                 {data.method1.rows.map(row => (
-                  <div key={row.id} className="border border-stone-200 p-4 rounded-lg bg-stone-50/50">
+                  <div key={row.id} className="border border-stone-200 p-4 rounded-lg bg-stone-50/50 print:bg-white print:p-0 print:border-none">
                     <div className="flex justify-between items-center mb-4">
                       <h4 className="text-xs font-bold uppercase text-stone-600">Photos for Color {row.colorCode || '??'}</h4>
                       {isEditing && (
@@ -616,7 +721,13 @@ export default function App() {
                           <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative group">
                             {row.photos[idx] ? (
                               <>
-                                <img src={row.photos[idx]} className="w-full h-full object-cover" alt={label} referrerPolicy="no-referrer" />
+                                <img 
+                                  src={row.photos[idx]} 
+                                  className="w-full h-full object-cover cursor-zoom-in" 
+                                  alt={label} 
+                                  referrerPolicy="no-referrer" 
+                                  onClick={() => setZoomedImage(row.photos[idx])}
+                                />
                                 {isEditing && (
                                   <button 
                                     onClick={() => setData(prev => ({
@@ -649,7 +760,7 @@ export default function App() {
             </section>
 
             {/* 3. Method 2 */}
-            <section>
+            <section id="method2" className="print-no-break">
               <div className="flex justify-between items-center bg-stone-900 text-white px-4 py-2 mb-4">
                 <h3 className="text-sm font-bold uppercase tracking-widest">
                   Method 2: {isEditing ? (
@@ -669,8 +780,11 @@ export default function App() {
 
               <div className="space-y-6">
                 {/* Length Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse border border-stone-300 text-[10px]">
+                <div className="overflow-x-auto relative group">
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 bg-stone-900/10 p-1 rounded-l md:hidden pointer-events-none">
+                    <ChevronRight className="w-4 h-4 text-stone-500 animate-pulse" />
+                  </div>
+                  <table className="w-full border-collapse border border-stone-300 text-[10px] min-w-[800px]">
                     <thead>
                       <tr className="bg-blue-50">
                         <th colSpan={10} className="border border-stone-300 p-1 font-bold uppercase text-blue-900">Length/Warp along grandline (cm)</th>
@@ -720,8 +834,11 @@ export default function App() {
                 </div>
 
                 {/* Width Table */}
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse border border-stone-300 text-[10px]">
+                <div className="overflow-x-auto relative group">
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 bg-stone-900/10 p-1 rounded-l md:hidden pointer-events-none">
+                    <ChevronRight className="w-4 h-4 text-stone-500 animate-pulse" />
+                  </div>
+                  <table className="w-full border-collapse border border-stone-300 text-[10px] min-w-[800px]">
                     <thead>
                       <tr className="bg-green-50">
                         <th colSpan={10} className="border border-stone-300 p-1 font-bold uppercase text-green-900">Width/Weft cross grandline (cm)</th>
@@ -788,10 +905,10 @@ export default function App() {
                 </div>
 
                 {/* Method 2 Photos */}
-                <div className="mt-8 space-y-8">
+                <div className="mt-8 space-y-8 print-no-break">
                   <h3 className="text-xs font-bold uppercase tracking-widest border-b border-stone-300 pb-2">Photo method 2</h3>
                   {data.method2.rows.map(row => (
-                    <div key={row.id} className="border border-stone-200 p-4 rounded-lg bg-stone-50/50">
+                    <div key={row.id} className="border border-stone-200 p-4 rounded-lg bg-stone-50/50 print:bg-white print:p-0 print:border-none">
                       <div className="flex justify-between items-center mb-4">
                         <h4 className="text-xs font-bold uppercase text-stone-600">Photos for Color {row.colorCode || '??'}</h4>
                         {isEditing && (
@@ -818,7 +935,13 @@ export default function App() {
                             <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative group">
                               {item.photos[item.idx] ? (
                                 <>
-                                  <img src={item.photos[item.idx]} className="w-full h-full object-cover" alt={item.label} referrerPolicy="no-referrer" />
+                                  <img 
+                                    src={item.photos[item.idx]} 
+                                    className="w-full h-full object-cover cursor-zoom-in" 
+                                    alt={item.label} 
+                                    referrerPolicy="no-referrer" 
+                                    onClick={() => setZoomedImage(item.photos[item.idx])}
+                                  />
                                   {isEditing && (
                                     <button 
                                       onClick={() => setData(prev => ({
@@ -858,7 +981,7 @@ export default function App() {
             </section>
 
             {/* 4. Remarks */}
-            <section>
+            <section id="remarks" className="print-no-break">
               <h3 className="text-sm font-bold bg-stone-100 px-3 py-1 border-l-4 border-stone-900 mb-3 uppercase tracking-widest">
                 5. Remarks
               </h3>
@@ -877,7 +1000,7 @@ export default function App() {
           </main>
 
           {/* Footer */}
-          <footer className="p-8 border-t border-stone-200 bg-stone-50/50 flex justify-between items-end">
+          <footer className="p-8 border-t border-stone-200 bg-stone-50/50 flex justify-between items-end print:bg-white print:border-none">
             <div className="space-y-4">
               <div className="w-48 border-b border-stone-900 h-10"></div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Tested By</p>
@@ -919,7 +1042,32 @@ export default function App() {
             margin: 1cm;
           }
         }
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
       `}</style>
+
+      {/* Image Zoom Modal */}
+      {zoomedImage && (
+        <div 
+          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setZoomedImage(null)}
+        >
+          <img 
+            src={zoomedImage} 
+            className="max-w-full max-h-full object-contain rounded shadow-2xl" 
+            alt="Zoomed" 
+            referrerPolicy="no-referrer"
+          />
+          <button className="absolute top-4 right-4 text-white p-2 hover:bg-white/10 rounded-full">
+            <Plus className="w-8 h-8 rotate-45" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
