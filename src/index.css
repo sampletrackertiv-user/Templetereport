@@ -16,6 +16,10 @@
 
 @layer utilities {
   @media print {
+    @page {
+      size: landscape;
+      margin: 10mm;
+    }
     .print-break-inside-avoid {
       break-inside: avoid;
     }
@@ -39,6 +43,22 @@
     }
     .print-bg-white {
       background-color: white !important;
+    }
+    body {
+      background: white !important;
+      padding: 0 !important;
+    }
+    .max-w-6xl {
+      max-width: 100% !important;
+    }
+    button, .sticky, .fixed, .no-print {
+      display: none !important;
+    }
+    #report-container {
+      box-shadow: none !important;
+      border: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
   }
 }

@@ -17,10 +17,29 @@ import {
   ChevronRight,
   Loader2,
   RotateCw,
-  RefreshCw
+  RefreshCw,
+  GripVertical
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import {
+  DndContext, 
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  rectSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 // --- Types ---
 
@@ -30,6 +49,12 @@ interface MaterialProperties {
   legacyNo: string;
   description: string;
   composition: string;
+}
+
+interface Photo {
+  id: string;
+  url: string;
+  rotation: number;
 }
 
 interface Method1Row {
@@ -45,7 +70,7 @@ interface Method1Row {
     afterCut: number;
     afterTest: number;
   };
-  photos: { url: string; rotation: number }[]; 
+  photos: Photo[]; 
 }
 
 interface Method2Row {
@@ -63,8 +88,8 @@ interface Method2Row {
     afterStep1: number;
     afterStep2: number;
   };
-  photosStep1: { url: string; rotation: number }[];
-  photosStep2: { url: string; rotation: number }[];
+  photosStep1: Photo[];
+  photosStep2: Photo[];
 }
 
 interface ReportData {
@@ -143,6 +168,81 @@ const calculateDiff = (before: number, after: number) => {
 
 // --- Components ---
 
+// --- Sortable Photo Component ---
+
+interface SortablePhotoProps {
+  photo: Photo;
+  label: string;
+  isEditing: boolean;
+  onRotate: () => void;
+  onDelete: () => void;
+  onZoom: () => void;
+}
+
+const SortablePhoto = ({ photo, label, isEditing, onRotate, onDelete, onZoom }: SortablePhotoProps) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: photo.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : 1,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="space-y-2 relative group">
+      <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative">
+        <div className="relative w-full h-full group">
+          <img 
+            src={photo.url} 
+            className="w-full h-full object-cover cursor-zoom-in transition-transform" 
+            style={{ transform: `rotate(${photo.rotation}deg)` }}
+            alt={label} 
+            referrerPolicy="no-referrer" 
+            onClick={onZoom}
+          />
+          {isEditing && (
+            <>
+              <div 
+                {...attributes} 
+                {...listeners}
+                className="absolute top-1 left-1 bg-stone-900/50 text-white p-1 rounded cursor-grab active:cursor-grabbing z-10"
+                title="Drag to reorder"
+              >
+                <GripVertical className="w-3 h-3" />
+              </div>
+              <div className="absolute top-1 right-1 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onRotate(); }}
+                  className="bg-stone-900 text-white p-1 rounded hover:bg-stone-700"
+                  title="Rotate"
+                >
+                  <RotateCw className="w-3 h-3" />
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                  className="bg-red-600 text-white p-1 rounded hover:bg-red-700"
+                  title="Delete"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      <p className="text-[9px] text-center font-bold text-stone-500 uppercase leading-tight">{label} (cm)</p>
+    </div>
+  );
+};
+
 export default function App() {
   const [data, setData] = useState<ReportData>(DEFAULT_REPORT);
   const [isEditing, setIsEditing] = useState(true);
@@ -150,6 +250,17 @@ export default function App() {
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -179,6 +290,35 @@ export default function App() {
     }
   }, []);
 
+  const handleDragEnd = (event: DragEndEvent, method: 1 | 2, rowId: string, step: 1 | 2 | null) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setData((prev) => {
+        const updateRows = (rows: any[]) => rows.map(r => {
+          if (r.id === rowId) {
+            if (method === 1) {
+              const oldIndex = r.photos.findIndex((p: any) => p.id === active.id);
+              const newIndex = r.photos.findIndex((p: any) => p.id === over.id);
+              return { ...r, photos: arrayMove(r.photos, oldIndex, newIndex) };
+            } else {
+              const photoKey = step === 1 ? 'photosStep1' : 'photosStep2';
+              const oldIndex = r[photoKey].findIndex((p: any) => p.id === active.id);
+              const newIndex = r[photoKey].findIndex((p: any) => p.id === over.id);
+              return { ...r, [photoKey]: arrayMove(r[photoKey], oldIndex, newIndex) };
+            }
+          }
+          return r;
+        });
+
+        if (method === 1) {
+          return { ...prev, method1: { ...prev.method1, rows: updateRows(prev.method1.rows) } };
+        } else {
+          return { ...prev, method2: { ...prev.method2, rows: updateRows(prev.method2.rows) } };
+        }
+      });
+    }
+  };
+
   const saveDraft = () => {
     localStorage.setItem('shrinkage_report_draft', JSON.stringify(data));
     alert("Draft saved successfully!");
@@ -189,6 +329,14 @@ export default function App() {
       setData(DEFAULT_REPORT);
       localStorage.removeItem('shrinkage_report_draft');
     }
+  };
+
+  const handlePrint = () => {
+    setIsEditing(false);
+    // Small delay to allow state update to reflect in DOM before print dialog
+    setTimeout(() => {
+      window.print();
+    }, 300);
   };
 
   const exportToPDF = async () => {
@@ -209,21 +357,35 @@ export default function App() {
       });
       await Promise.all(promises);
 
+      // Small delay to ensure rendering is complete
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 1.5,
         useCORS: true,
-        allowTaint: true,
+        allowTaint: false,
         logging: false,
         backgroundColor: '#ffffff',
-        windowWidth: 1400, // Increased window width for better layout capture
+        windowWidth: 1200,
         onclone: (clonedDoc) => {
-          // You can perform additional styling on the cloned document if needed
           const el = clonedDoc.getElementById('report-container');
-          if (el) el.style.boxShadow = 'none';
+          if (el) {
+            el.style.boxShadow = 'none';
+            el.style.margin = '0';
+            el.style.padding = '20px';
+            el.style.width = '1200px';
+          }
         }
       });
       
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      let imgData;
+      try {
+        imgData = canvas.toDataURL('image/jpeg', 0.92);
+      } catch (e) {
+        console.error('Canvas toDataURL failed:', e);
+        throw new Error('Security restriction: External images without CORS support are blocking PDF generation.');
+      }
+      
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -247,10 +409,13 @@ export default function App() {
         heightLeft -= pageHeight;
       }
       
-      pdf.save(`${data.title.replace(/\s+/g, '_')}.pdf`);
-    } catch (error) {
+      pdf.save(`${data.title.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
+    } catch (error: any) {
       console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF. Please try using the browser print option (Ctrl+P).');
+      const message = error.message || 'Unknown error';
+      if (window.confirm(`PDF generation failed: ${message}\n\nWould you like to use the browser print option instead?`)) {
+        handlePrint();
+      }
     } finally {
       setIsGeneratingPDF(false);
     }
@@ -355,7 +520,11 @@ export default function App() {
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64 = reader.result as string;
-          const photoObj = { url: base64, rotation: 0 };
+          const photoObj: Photo = { 
+            id: Math.random().toString(36).substr(2, 9),
+            url: base64, 
+            rotation: 0 
+          };
           if (method === 1) {
             setData(prev => ({
               ...prev,
@@ -466,6 +635,13 @@ export default function App() {
               >
                 {isEditing ? <Printer className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                 {isEditing ? 'Preview Report' : 'Edit Mode'}
+              </button>
+              <button 
+                onClick={handlePrint}
+                className="flex items-center gap-2 px-4 py-2 bg-stone-800 text-white rounded-lg font-medium hover:bg-stone-700 transition-all shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                Print
               </button>
               <button 
                 onClick={exportToPDF}
@@ -782,59 +958,52 @@ export default function App() {
                       )}
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {[
-                        "Before cut along grandline",
-                        "Before cut cross grandline",
-                        "After heatpress along grandline",
-                        "After heatpress cross grandline"
-                      ].map((label, idx) => (
-                        <div key={idx} className="space-y-2">
-                          <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative group">
-                            {row.photos[idx] ? (
-                              <div className="relative w-full h-full group">
-                                <img 
-                                  src={row.photos[idx].url} 
-                                  className="w-full h-full object-cover cursor-zoom-in transition-transform" 
-                                  style={{ transform: `rotate(${row.photos[idx].rotation}deg)` }}
-                                  alt={label} 
-                                  referrerPolicy="no-referrer" 
-                                  onClick={() => setZoomedImage(row.photos[idx].url)}
+                      <DndContext 
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={(event) => handleDragEnd(event, 1, row.id, null)}
+                      >
+                        <SortableContext 
+                          items={row.photos.map(p => p.id)}
+                          strategy={rectSortingStrategy}
+                        >
+                          {[
+                            "Before cut along grandline",
+                            "Before cut cross grandline",
+                            "After heatpress along grandline",
+                            "After heatpress cross grandline"
+                          ].map((label, idx) => (
+                            <React.Fragment key={idx}>
+                              {row.photos[idx] ? (
+                                <SortablePhoto 
+                                  photo={row.photos[idx]}
+                                  label={label}
+                                  isEditing={isEditing}
+                                  onRotate={() => rotatePhoto(1, row.id, null, idx)}
+                                  onDelete={() => setData(prev => ({
+                                    ...prev,
+                                    method1: {
+                                      ...prev.method1,
+                                      rows: prev.method1.rows.map(r => r.id === row.id ? { ...r, photos: r.photos.filter((_, i) => i !== idx) } : r)
+                                    }
+                                  }))}
+                                  onZoom={() => setZoomedImage(row.photos[idx].url)}
                                 />
-                                {isEditing && (
-                                  <div className="absolute top-1 right-1 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button 
-                                      onClick={() => rotatePhoto(1, row.id, null, idx)}
-                                      className="bg-stone-900 text-white p-1 rounded hover:bg-stone-700"
-                                      title="Rotate"
-                                    >
-                                      <RotateCw className="w-3 h-3" />
-                                    </button>
-                                    <button 
-                                      onClick={() => setData(prev => ({
-                                        ...prev,
-                                        method1: {
-                                          ...prev.method1,
-                                          rows: prev.method1.rows.map(r => r.id === row.id ? { ...r, photos: r.photos.filter((_, i) => i !== idx) } : r)
-                                        }
-                                      }))}
-                                      className="bg-red-600 text-white p-1 rounded hover:bg-red-700"
-                                      title="Delete"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative group">
+                                    <div className="text-center p-4">
+                                      <Camera className="w-6 h-6 text-stone-400 mx-auto mb-1" />
+                                      <span className="text-[8px] text-stone-500 uppercase font-bold">{idx + 1}</span>
+                                    </div>
                                   </div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="text-center p-4">
-                                <Camera className="w-6 h-6 text-stone-400 mx-auto mb-1" />
-                                <span className="text-[8px] text-stone-500 uppercase font-bold">{idx + 1}</span>
-                              </div>
-                            )}
-                          </div>
-                          <p className="text-[9px] text-center font-bold text-stone-500 uppercase leading-tight">{label} (cm)</p>
-                        </div>
-                      ))}
+                                  <p className="text-[9px] text-center font-bold text-stone-500 uppercase leading-tight">{label} (cm)</p>
+                                </div>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </SortableContext>
+                      </DndContext>
                     </div>
                   </div>
                 ))}
@@ -870,7 +1039,7 @@ export default function App() {
                   <table className="w-full border-collapse border border-stone-300 text-[10px] min-w-[800px]">
                     <thead>
                       <tr className="bg-blue-50">
-                        <th colSpan={10} className="border border-stone-300 p-1 font-bold uppercase text-blue-900">Length/Warp along grandline (cm)</th>
+                        <th colSpan={isEditing ? 11 : 10} className="border border-stone-300 p-1 font-bold uppercase text-blue-900">Length/Warp along grandline (cm)</th>
                       </tr>
                       <tr className="bg-stone-100">
                         <th className="border border-stone-300 p-1 font-bold uppercase">Color Code</th>
@@ -883,6 +1052,7 @@ export default function App() {
                         <th className="border border-stone-300 p-1 font-semibold">(+/-) S2</th>
                         <th className="border border-stone-300 p-1 font-semibold">Shrink % step2</th>
                         <th className="border border-stone-300 p-1 font-bold bg-yellow-50">Total Shrink %</th>
+                        {isEditing && <th className="border border-stone-300 p-1"></th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -910,6 +1080,13 @@ export default function App() {
                           <td className="border border-stone-300 p-1 text-center text-stone-500">{(row.length.afterStep1 - row.length.afterStep2).toFixed(1)}</td>
                           <td className="border border-stone-300 p-1 text-center">{calculateShrinkage(row.length.afterStep1, row.length.afterStep2).toFixed(2)}%</td>
                           <td className="border border-stone-300 p-1 text-center font-bold bg-yellow-50/50">{calculateShrinkage(row.length.before, row.length.afterStep2).toFixed(2)}%</td>
+                          {isEditing && (
+                            <td className="border border-stone-300 p-1 text-center">
+                              <button onClick={() => removeMethod2Row(row.id)} className="text-red-500 hover:text-red-700">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -924,7 +1101,7 @@ export default function App() {
                   <table className="w-full border-collapse border border-stone-300 text-[10px] min-w-[800px]">
                     <thead>
                       <tr className="bg-green-50">
-                        <th colSpan={10} className="border border-stone-300 p-1 font-bold uppercase text-green-900">Width/Weft cross grandline (cm)</th>
+                        <th colSpan={isEditing ? 11 : 10} className="border border-stone-300 p-1 font-bold uppercase text-green-900">Width/Weft cross grandline (cm)</th>
                       </tr>
                       <tr className="bg-stone-100">
                         <th className="border border-stone-300 p-1 font-bold uppercase">Color Code</th>
@@ -937,6 +1114,7 @@ export default function App() {
                         <th className="border border-stone-300 p-1 font-semibold">(+/-) S2</th>
                         <th className="border border-stone-300 p-1 font-semibold">Shrink % step2</th>
                         <th className="border border-stone-300 p-1 font-bold bg-yellow-50">Total Shrink %</th>
+                        {isEditing && <th className="border border-stone-300 p-1"></th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -964,6 +1142,13 @@ export default function App() {
                           <td className="border border-stone-300 p-1 text-center text-stone-500">{(row.width.afterStep1 - row.width.afterStep2).toFixed(1)}</td>
                           <td className="border border-stone-300 p-1 text-center">{calculateShrinkage(row.width.afterStep1, row.width.afterStep2).toFixed(2)}%</td>
                           <td className="border border-stone-300 p-1 text-center font-bold bg-yellow-50/50">{calculateShrinkage(row.width.before, row.width.afterStep2).toFixed(2)}%</td>
+                          {isEditing && (
+                            <td className="border border-stone-300 p-1 text-center">
+                              <button onClick={() => removeMethod2Row(row.id)} className="text-red-500 hover:text-red-700">
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -1008,65 +1193,95 @@ export default function App() {
                         )}
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {[
-                          { label: "After step 1 along grandline", photos: row.photosStep1, idx: 0, step: 1 },
-                          { label: "After step 1 cross grandline", photos: row.photosStep1, idx: 1, step: 1 },
-                          { label: "After step 2 along grandline", photos: row.photosStep2, idx: 0, step: 2 },
-                          { label: "After step 2 cross grandline", photos: row.photosStep2, idx: 1, step: 2 }
-                        ].map((item, i) => (
-                          <div key={i} className="space-y-2">
-                            <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative group">
-                              {item.photos[item.idx] ? (
-                                <div className="relative w-full h-full group">
-                                  <img 
-                                    src={item.photos[item.idx].url} 
-                                    className="w-full h-full object-cover cursor-zoom-in transition-transform" 
-                                    style={{ transform: `rotate(${item.photos[item.idx].rotation}deg)` }}
-                                    alt={item.label} 
-                                    referrerPolicy="no-referrer" 
-                                    onClick={() => setZoomedImage(item.photos[item.idx].url)}
+                        <DndContext 
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={(event) => handleDragEnd(event, 2, row.id, 1)}
+                        >
+                          <SortableContext 
+                            items={row.photosStep1.map(p => p.id)}
+                            strategy={rectSortingStrategy}
+                          >
+                            {[
+                              "After step 1 along grandline",
+                              "After step 1 cross grandline"
+                            ].map((label, idx) => (
+                              <React.Fragment key={idx}>
+                                {row.photosStep1[idx] ? (
+                                  <SortablePhoto 
+                                    photo={row.photosStep1[idx]}
+                                    label={label}
+                                    isEditing={isEditing}
+                                    onRotate={() => rotatePhoto(2, row.id, 1, idx)}
+                                    onDelete={() => setData(prev => ({
+                                      ...prev,
+                                      method2: {
+                                        ...prev.method2,
+                                        rows: prev.method2.rows.map(r => r.id === row.id ? { ...r, photosStep1: r.photosStep1.filter((_, i) => i !== idx) } : r)
+                                      }
+                                    }))}
+                                    onZoom={() => setZoomedImage(row.photosStep1[idx].url)}
                                   />
-                                  {isEditing && (
-                                    <div className="absolute top-1 right-1 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button 
-                                        onClick={() => rotatePhoto(2, row.id, item.step as 1 | 2, item.idx)}
-                                        className="bg-stone-900 text-white p-1 rounded hover:bg-stone-700"
-                                        title="Rotate"
-                                      >
-                                        <RotateCw className="w-3 h-3" />
-                                      </button>
-                                      <button 
-                                        onClick={() => setData(prev => ({
-                                          ...prev,
-                                          method2: {
-                                            ...prev.method2,
-                                            rows: prev.method2.rows.map(r => {
-                                              if (r.id === row.id) {
-                                                if (item.step === 1) return { ...r, photosStep1: r.photosStep1.filter((_, idx) => idx !== item.idx) };
-                                                return { ...r, photosStep2: r.photosStep2.filter((_, idx) => idx !== item.idx) };
-                                              }
-                                              return r;
-                                            })
-                                          }
-                                        }))}
-                                        className="bg-red-600 text-white p-1 rounded hover:bg-red-700"
-                                        title="Delete"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative group">
+                                      <div className="text-center p-4">
+                                        <Camera className="w-6 h-6 text-stone-400 mx-auto mb-1" />
+                                        <span className="text-[8px] text-stone-500 uppercase font-bold">S1-{idx + 1}</span>
+                                      </div>
                                     </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="text-center p-4">
-                                  <Camera className="w-6 h-6 text-stone-400 mx-auto mb-1" />
-                                  <span className="text-[8px] text-stone-500 uppercase font-bold">{item.step === 1 ? 'S1' : 'S2'}-{item.idx + 1}</span>
-                                </div>
-                              )}
-                            </div>
-                            <p className="text-[9px] text-center font-bold text-stone-500 uppercase leading-tight">{item.label} (cm)</p>
-                          </div>
-                        ))}
+                                    <p className="text-[9px] text-center font-bold text-stone-500 uppercase leading-tight">{label} (cm)</p>
+                                  </div>
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </SortableContext>
+                        </DndContext>
+
+                        <DndContext 
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={(event) => handleDragEnd(event, 2, row.id, 2)}
+                        >
+                          <SortableContext 
+                            items={row.photosStep2.map(p => p.id)}
+                            strategy={rectSortingStrategy}
+                          >
+                            {[
+                              "After step 2 along grandline",
+                              "After step 2 cross grandline"
+                            ].map((label, idx) => (
+                              <React.Fragment key={idx}>
+                                {row.photosStep2[idx] ? (
+                                  <SortablePhoto 
+                                    photo={row.photosStep2[idx]}
+                                    label={label}
+                                    isEditing={isEditing}
+                                    onRotate={() => rotatePhoto(2, row.id, 2, idx)}
+                                    onDelete={() => setData(prev => ({
+                                      ...prev,
+                                      method2: {
+                                        ...prev.method2,
+                                        rows: prev.method2.rows.map(r => r.id === row.id ? { ...r, photosStep2: r.photosStep2.filter((_, i) => i !== idx) } : r)
+                                      }
+                                    }))}
+                                    onZoom={() => setZoomedImage(row.photosStep2[idx].url)}
+                                  />
+                                ) : (
+                                  <div className="space-y-2">
+                                    <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative group">
+                                      <div className="text-center p-4">
+                                        <Camera className="w-6 h-6 text-stone-400 mx-auto mb-1" />
+                                        <span className="text-[8px] text-stone-500 uppercase font-bold">S2-{idx + 1}</span>
+                                      </div>
+                                    </div>
+                                    <p className="text-[9px] text-center font-bold text-stone-500 uppercase leading-tight">{label} (cm)</p>
+                                  </div>
+                                )}
+                              </React.Fragment>
+                            ))}
+                          </SortableContext>
+                        </DndContext>
                       </div>
                     </div>
                   ))}
@@ -1115,27 +1330,6 @@ export default function App() {
       </div>
 
       <style>{`
-        @media print {
-          body {
-            background: white;
-            padding: 0;
-          }
-          .max-w-6xl {
-            max-width: 100%;
-          }
-          button, .sticky, .fixed, .no-print {
-            display: none !important;
-          }
-          #report-container {
-            box-shadow: none;
-            border: none;
-            margin: 0;
-            padding: 0;
-          }
-          @page {
-            margin: 1cm;
-          }
-        }
         .no-scrollbar::-webkit-scrollbar {
           display: none;
         }
