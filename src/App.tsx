@@ -119,22 +119,22 @@ const DEFAULT_REPORT: ReportData = {
   companyAddress: "No. 2, Street No. 3, Song Than 1 Industrial Zone, Binh Duong, Vietnam",
   logo: "https://i.postimg.cc/7P0JJwSR/Triumphlogo-Red-RGB-LO-2.png",
   date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-  creator: "Ni Vo",
+  creator: "",
   materialProperties: {
-    plmNo: "F0034542 /43/44/45/46",
-    sapNo: "R0132206",
-    legacyNo: "05154",
-    description: "ELASTIC CIRCULAR KNITTED PLAIN",
-    composition: "70% PA Pre, 30% EL"
+    plmNo: "",
+    sapNo: "",
+    legacyNo: "",
+    description: "",
+    composition: ""
   },
   method1: {
     parameter: "Heat press parameter 180 degrees, 30 seconds, 4 bar, only 1 layer (without glue)",
     rows: [
       {
         id: '1',
-        colorCode: "04",
-        length: { before: 30, afterCut: 30, afterTest: 29.3 },
-        width: { before: 30, afterCut: 30, afterTest: 29.0 },
+        colorCode: "",
+        length: { before: 30, afterCut: 30, afterTest: 30 },
+        width: { before: 30, afterCut: 30, afterTest: 30 },
         photos: []
       }
     ]
@@ -144,9 +144,9 @@ const DEFAULT_REPORT: ReportData = {
     rows: [
       {
         id: '1',
-        colorCode: "04",
-        length: { before: 30, afterCut: 30, afterStep1: 29.6, afterStep2: 29.5 },
-        width: { before: 30, afterCut: 30, afterStep1: 29.3, afterStep2: 29.2 },
+        colorCode: "",
+        length: { before: 30, afterCut: 30, afterStep1: 30, afterStep2: 30 },
+        width: { before: 30, afterCut: 30, afterStep1: 30, afterStep2: 30 },
         photosStep1: [],
         photosStep2: []
       }
@@ -1323,9 +1323,9 @@ export default function App() {
 
         {/* Floating Help/Info */}
         <div className="mt-8 flex justify-center gap-6 text-[10px] text-stone-400 font-medium uppercase tracking-widest">
-          <span className="flex items-center gap-1"><Info className="w-3 h-3" /> Auto-calculating shrinkage %</span>
+          <span className="flex items-center gap-1"><Info className="w-3 h-3" /> Test shrinkage form 01 %</span>
           <span className="flex items-center gap-1"><Info className="w-3 h-3" /> Standard 30cm samples</span>
-          <span className="flex items-center gap-1"><Info className="w-3 h-3" /> ISO 9001 Compliant</span>
+          <span className="flex items-center gap-1"><Info className="w-3 h-3" /> Triummph VN</span>
         </div>
       </div>
 
