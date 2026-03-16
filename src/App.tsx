@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -15,7 +15,9 @@ import {
   Info,
   Save,
   ChevronRight,
-  Loader2
+  Loader2,
+  RotateCw,
+  RefreshCw
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -43,7 +45,7 @@ interface Method1Row {
     afterCut: number;
     afterTest: number;
   };
-  photos: string[]; // base64 strings
+  photos: { url: string; rotation: number }[]; 
 }
 
 interface Method2Row {
@@ -61,8 +63,8 @@ interface Method2Row {
     afterStep1: number;
     afterStep2: number;
   };
-  photosStep1: string[];
-  photosStep2: string[];
+  photosStep1: { url: string; rotation: number }[];
+  photosStep2: { url: string; rotation: number }[];
 }
 
 interface ReportData {
@@ -92,7 +94,7 @@ const DEFAULT_REPORT: ReportData = {
   companyAddress: "No. 2, Street No. 3, Song Than 1 Industrial Zone, Binh Duong, Vietnam",
   logo: "https://i.postimg.cc/7P0JJwSR/Triumphlogo-Red-RGB-LO-2.png",
   date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-  creator: "Bonding Technician",
+  creator: "Ni Vo",
   materialProperties: {
     plmNo: "F0034542 /43/44/45/46",
     sapNo: "R0132206",
@@ -125,7 +127,7 @@ const DEFAULT_REPORT: ReportData = {
       }
     ]
   },
-  remarks: "Step 1: Heat press with glue,Step 2: Heat press with outer (double layer main item- with LN + glue+ outer)"
+  remarks: "Heat press parameter 180 degrees, 30 seconds, 4 bar, only 1 layer (without glue)"
 };
 
 // --- Helper Functions ---
@@ -148,18 +150,44 @@ export default function App() {
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
-  
-  const sections = [
-    { id: 'material', label: '1. Material' },
-    { id: 'method1', label: '2. Method 1' },
-    { id: 'method2', label: '3. Method 2' },
-    { id: 'remarks', label: '4. Remarks' },
-  ];
 
-  const scrollToSection = (id: string) => {
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Load from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('shrinkage_report_draft');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Basic migration for old photo format if needed
+        const migrateRow1 = (r: any) => ({
+          ...r,
+          photos: r.photos.map((p: any) => typeof p === 'string' ? { url: p, rotation: 0 } : p)
+        });
+        const migrateRow2 = (r: any) => ({
+          ...r,
+          photosStep1: r.photosStep1.map((p: any) => typeof p === 'string' ? { url: p, rotation: 0 } : p),
+          photosStep2: r.photosStep2.map((p: any) => typeof p === 'string' ? { url: p, rotation: 0 } : p)
+        });
+
+        setData({
+          ...parsed,
+          method1: { ...parsed.method1, rows: parsed.method1.rows.map(migrateRow1) },
+          method2: { ...parsed.method2, rows: parsed.method2.rows.map(migrateRow2) }
+        });
+      } catch (e) {
+        console.error("Failed to load draft", e);
+      }
+    }
+  }, []);
+
+  const saveDraft = () => {
+    localStorage.setItem('shrinkage_report_draft', JSON.stringify(data));
+    alert("Draft saved successfully!");
+  };
+
+  const resetReport = () => {
+    if (window.confirm("Are you sure you want to reset the report to default? All unsaved changes will be lost.")) {
+      setData(DEFAULT_REPORT);
+      localStorage.removeItem('shrinkage_report_draft');
     }
   };
 
@@ -168,46 +196,58 @@ export default function App() {
     
     setIsGeneratingPDF(true);
     try {
-      // Temporarily hide elements that shouldn't be in the PDF
       const element = reportRef.current;
       
-      // Use html2canvas to capture the report
-      // We use a higher scale for better clarity
+      // Ensure images are loaded
+      const images = element.getElementsByTagName('img');
+      const promises = Array.from(images).map((img: HTMLImageElement) => {
+        if (img.complete) return Promise.resolve();
+        return new Promise((resolve) => {
+          img.onload = resolve;
+          img.onerror = resolve;
+        });
+      });
+      await Promise.all(promises);
+
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
+        allowTaint: true,
         logging: false,
         backgroundColor: '#ffffff',
-        windowWidth: 1200 // Force a desktop-like width for consistent layout
+        windowWidth: 1400, // Increased window width for better layout capture
+        onclone: (clonedDoc) => {
+          // You can perform additional styling on the cloned document if needed
+          const el = clonedDoc.getElementById('report-container');
+          if (el) el.style.boxShadow = 'none';
+        }
       });
       
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4'
       });
       
-      const imgProps = pdf.getImageProperties(imgData);
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
       
-      // Handle multi-page PDF if the report is long
       let heightLeft = pdfHeight;
       let position = 0;
       const pageHeight = pdf.internal.pageSize.getHeight();
       
-      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight, undefined, 'FAST');
       heightLeft -= pageHeight;
       
       while (heightLeft >= 0) {
         position = heightLeft - pdfHeight;
         pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight, undefined, 'FAST');
         heightLeft -= pageHeight;
       }
       
-      pdf.save(`${data.title.replace(/\s+/g, '_')}_${data.date.replace(/\s+/g, '_')}.pdf`);
+      pdf.save(`${data.title.replace(/\s+/g, '_')}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Failed to generate PDF. Please try using the browser print option (Ctrl+P).');
@@ -315,12 +355,13 @@ export default function App() {
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64 = reader.result as string;
+          const photoObj = { url: base64, rotation: 0 };
           if (method === 1) {
             setData(prev => ({
               ...prev,
               method1: {
                 ...prev.method1,
-                rows: prev.method1.rows.map(r => r.id === rowId ? { ...r, photos: [...r.photos, base64].slice(0, 4) } : r)
+                rows: prev.method1.rows.map(r => r.id === rowId ? { ...r, photos: [...r.photos, photoObj].slice(0, 4) } : r)
               }
             }));
           } else {
@@ -330,8 +371,8 @@ export default function App() {
                 ...prev.method2,
                 rows: prev.method2.rows.map(r => {
                   if (r.id === rowId) {
-                    if (step === 1) return { ...r, photosStep1: [...r.photosStep1, base64].slice(0, 4) };
-                    return { ...r, photosStep2: [...r.photosStep2, base64].slice(0, 4) };
+                    if (step === 1) return { ...r, photosStep1: [...r.photosStep1, photoObj].slice(0, 4) };
+                    return { ...r, photosStep2: [...r.photosStep2, photoObj].slice(0, 4) };
                   }
                   return r;
                 })
@@ -341,6 +382,35 @@ export default function App() {
         };
         reader.readAsDataURL(file);
       });
+    }
+  };
+
+  const rotatePhoto = (method: 1 | 2, rowId: string, step: 1 | 2 | null, photoIdx: number) => {
+    if (method === 1) {
+      setData(prev => ({
+        ...prev,
+        method1: {
+          ...prev.method1,
+          rows: prev.method1.rows.map(r => r.id === rowId ? { 
+            ...r, 
+            photos: r.photos.map((p, i) => i === photoIdx ? { ...p, rotation: (p.rotation + 90) % 360 } : p) 
+          } : r)
+        }
+      }));
+    } else {
+      setData(prev => ({
+        ...prev,
+        method2: {
+          ...prev.method2,
+          rows: prev.method2.rows.map(r => {
+            if (r.id === rowId) {
+              if (step === 1) return { ...r, photosStep1: r.photosStep1.map((p, i) => i === photoIdx ? { ...p, rotation: (p.rotation + 90) % 360 } : p) };
+              return { ...r, photosStep2: r.photosStep2.map((p, i) => i === photoIdx ? { ...p, rotation: (p.rotation + 90) % 360 } : p) };
+            }
+            return r;
+          })
+        }
+      }));
     }
   };
 
@@ -373,6 +443,20 @@ export default function App() {
             </div>
             <div className="flex items-center gap-3">
               <button 
+                onClick={saveDraft}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-all shadow-sm"
+              >
+                <Save className="w-4 h-4" />
+                Save Draft
+              </button>
+              <button 
+                onClick={resetReport}
+                className="flex items-center gap-2 px-4 py-2 bg-stone-200 text-stone-700 rounded-lg font-medium hover:bg-stone-300 transition-all"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Reset
+              </button>
+              <button 
                 onClick={() => setIsEditing(!isEditing)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
                   isEditing 
@@ -380,7 +464,7 @@ export default function App() {
                   : 'bg-stone-200 text-stone-700 hover:bg-stone-300'
                 }`}
               >
-                {isEditing ? <Save className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
+                {isEditing ? <Printer className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                 {isEditing ? 'Preview Report' : 'Edit Mode'}
               </button>
               <button 
@@ -396,20 +480,6 @@ export default function App() {
                 {isGeneratingPDF ? 'Generating...' : 'Export PDF'}
               </button>
             </div>
-          </div>
-          
-          {/* Quick Nav */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar border-t border-stone-100 pt-3">
-            <span className="text-[10px] font-bold text-stone-400 uppercase whitespace-nowrap mr-2">Jump to:</span>
-            {sections.map(s => (
-              <button 
-                key={s.id}
-                onClick={() => scrollToSection(s.id)}
-                className="px-3 py-1 bg-stone-50 hover:bg-stone-100 text-stone-600 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors whitespace-nowrap border border-stone-200"
-              >
-                {s.label}
-              </button>
-            ))}
           </div>
         </div>
 
@@ -577,14 +647,15 @@ export default function App() {
             {/* 2. Method 1 */}
             <section id="method1" className="print-no-break">
               <div className="flex justify-between items-center bg-stone-900 text-white px-4 py-2 mb-4">
-                <h3 className="text-sm font-bold uppercase tracking-widest">
+                <h3 className="text-sm font-bold uppercase tracking-widest flex-1">
                   Method 1: {isEditing ? (
-                    <input 
-                      className="bg-transparent border-b border-white/30 focus:border-white focus:outline-none ml-2 w-2/3"
+                    <textarea 
+                      className="bg-transparent border-b border-white/30 focus:border-white focus:outline-none ml-2 w-full text-xs"
                       value={data.method1.parameter}
                       onChange={e => setData({...data, method1: {...data.method1, parameter: e.target.value}})}
+                      rows={2}
                     />
-                  ) : data.method1.parameter}
+                  ) : <span className="ml-2">{data.method1.parameter}</span>}
                 </h3>
                 {isEditing && (
                   <button onClick={addMethod1Row} className="text-xs flex items-center gap-1 hover:text-red-400 transition-colors">
@@ -720,29 +791,40 @@ export default function App() {
                         <div key={idx} className="space-y-2">
                           <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative group">
                             {row.photos[idx] ? (
-                              <>
+                              <div className="relative w-full h-full group">
                                 <img 
-                                  src={row.photos[idx]} 
-                                  className="w-full h-full object-cover cursor-zoom-in" 
+                                  src={row.photos[idx].url} 
+                                  className="w-full h-full object-cover cursor-zoom-in transition-transform" 
+                                  style={{ transform: `rotate(${row.photos[idx].rotation}deg)` }}
                                   alt={label} 
                                   referrerPolicy="no-referrer" 
-                                  onClick={() => setZoomedImage(row.photos[idx])}
+                                  onClick={() => setZoomedImage(row.photos[idx].url)}
                                 />
                                 {isEditing && (
-                                  <button 
-                                    onClick={() => setData(prev => ({
-                                      ...prev,
-                                      method1: {
-                                        ...prev.method1,
-                                        rows: prev.method1.rows.map(r => r.id === row.id ? { ...r, photos: r.photos.filter((_, i) => i !== idx) } : r)
-                                      }
-                                    }))}
-                                    className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+                                  <div className="absolute top-1 right-1 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                      onClick={() => rotatePhoto(1, row.id, null, idx)}
+                                      className="bg-stone-900 text-white p-1 rounded hover:bg-stone-700"
+                                      title="Rotate"
+                                    >
+                                      <RotateCw className="w-3 h-3" />
+                                    </button>
+                                    <button 
+                                      onClick={() => setData(prev => ({
+                                        ...prev,
+                                        method1: {
+                                          ...prev.method1,
+                                          rows: prev.method1.rows.map(r => r.id === row.id ? { ...r, photos: r.photos.filter((_, i) => i !== idx) } : r)
+                                        }
+                                      }))}
+                                      className="bg-red-600 text-white p-1 rounded hover:bg-red-700"
+                                      title="Delete"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 )}
-                              </>
+                              </div>
                             ) : (
                               <div className="text-center p-4">
                                 <Camera className="w-6 h-6 text-stone-400 mx-auto mb-1" />
@@ -762,14 +844,15 @@ export default function App() {
             {/* 3. Method 2 */}
             <section id="method2" className="print-no-break">
               <div className="flex justify-between items-center bg-stone-900 text-white px-4 py-2 mb-4">
-                <h3 className="text-sm font-bold uppercase tracking-widest">
+                <h3 className="text-sm font-bold uppercase tracking-widest flex-1">
                   Method 2: {isEditing ? (
-                    <input 
-                      className="bg-transparent border-b border-white/30 focus:border-white focus:outline-none ml-2 w-2/3"
+                    <textarea 
+                      className="bg-transparent border-b border-white/30 focus:border-white focus:outline-none ml-2 w-full text-xs"
                       value={data.method2.parameter}
                       onChange={e => setData({...data, method2: {...data.method2, parameter: e.target.value}})}
+                      rows={2}
                     />
-                  ) : data.method2.parameter}
+                  ) : <span className="ml-2">{data.method2.parameter}</span>}
                 </h3>
                 {isEditing && (
                   <button onClick={addMethod2Row} className="text-xs flex items-center gap-1 hover:text-red-400 transition-colors">
@@ -795,10 +878,10 @@ export default function App() {
                         <th className="border border-stone-300 p-1 font-semibold">After cut</th>
                         <th className="border border-stone-300 p-1 font-semibold">After step 1</th>
                         <th className="border border-stone-300 p-1 font-semibold">(+/-) S1</th>
-                        <th className="border border-stone-300 p-1 font-semibold">Shrink % S1</th>
+                        <th className="border border-stone-300 p-1 font-semibold">Shrink % step1</th>
                         <th className="border border-stone-300 p-1 font-semibold">After step 2</th>
                         <th className="border border-stone-300 p-1 font-semibold">(+/-) S2</th>
-                        <th className="border border-stone-300 p-1 font-semibold">Shrink % S2</th>
+                        <th className="border border-stone-300 p-1 font-semibold">Shrink % step2</th>
                         <th className="border border-stone-300 p-1 font-bold bg-yellow-50">Total Shrink %</th>
                       </tr>
                     </thead>
@@ -849,10 +932,10 @@ export default function App() {
                         <th className="border border-stone-300 p-1 font-semibold">After cut</th>
                         <th className="border border-stone-300 p-1 font-semibold">After step 1</th>
                         <th className="border border-stone-300 p-1 font-semibold">(+/-) S1</th>
-                        <th className="border border-stone-300 p-1 font-semibold">Shrink % S1</th>
+                        <th className="border border-stone-300 p-1 font-semibold">Shrink % step1</th>
                         <th className="border border-stone-300 p-1 font-semibold">After step 2</th>
                         <th className="border border-stone-300 p-1 font-semibold">(+/-) S2</th>
-                        <th className="border border-stone-300 p-1 font-semibold">Shrink % S2</th>
+                        <th className="border border-stone-300 p-1 font-semibold">Shrink % step2</th>
                         <th className="border border-stone-300 p-1 font-bold bg-yellow-50">Total Shrink %</th>
                       </tr>
                     </thead>
@@ -934,35 +1017,46 @@ export default function App() {
                           <div key={i} className="space-y-2">
                             <div className="aspect-square bg-stone-200 rounded border-2 border-dashed border-stone-300 flex items-center justify-center overflow-hidden relative group">
                               {item.photos[item.idx] ? (
-                                <>
+                                <div className="relative w-full h-full group">
                                   <img 
-                                    src={item.photos[item.idx]} 
-                                    className="w-full h-full object-cover cursor-zoom-in" 
+                                    src={item.photos[item.idx].url} 
+                                    className="w-full h-full object-cover cursor-zoom-in transition-transform" 
+                                    style={{ transform: `rotate(${item.photos[item.idx].rotation}deg)` }}
                                     alt={item.label} 
                                     referrerPolicy="no-referrer" 
-                                    onClick={() => setZoomedImage(item.photos[item.idx])}
+                                    onClick={() => setZoomedImage(item.photos[item.idx].url)}
                                   />
                                   {isEditing && (
-                                    <button 
-                                      onClick={() => setData(prev => ({
-                                        ...prev,
-                                        method2: {
-                                          ...prev.method2,
-                                          rows: prev.method2.rows.map(r => {
-                                            if (r.id === row.id) {
-                                              if (item.step === 1) return { ...r, photosStep1: r.photosStep1.filter((_, idx) => idx !== item.idx) };
-                                              return { ...r, photosStep2: r.photosStep2.filter((_, idx) => idx !== item.idx) };
-                                            }
-                                            return r;
-                                          })
-                                        }
-                                      }))}
-                                      className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
+                                    <div className="absolute top-1 right-1 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button 
+                                        onClick={() => rotatePhoto(2, row.id, item.step as 1 | 2, item.idx)}
+                                        className="bg-stone-900 text-white p-1 rounded hover:bg-stone-700"
+                                        title="Rotate"
+                                      >
+                                        <RotateCw className="w-3 h-3" />
+                                      </button>
+                                      <button 
+                                        onClick={() => setData(prev => ({
+                                          ...prev,
+                                          method2: {
+                                            ...prev.method2,
+                                            rows: prev.method2.rows.map(r => {
+                                              if (r.id === row.id) {
+                                                if (item.step === 1) return { ...r, photosStep1: r.photosStep1.filter((_, idx) => idx !== item.idx) };
+                                                return { ...r, photosStep2: r.photosStep2.filter((_, idx) => idx !== item.idx) };
+                                              }
+                                              return r;
+                                            })
+                                          }
+                                        }))}
+                                        className="bg-red-600 text-white p-1 rounded hover:bg-red-700"
+                                        title="Delete"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
                                   )}
-                                </>
+                                </div>
                               ) : (
                                 <div className="text-center p-4">
                                   <Camera className="w-6 h-6 text-stone-400 mx-auto mb-1" />
@@ -1016,7 +1110,7 @@ export default function App() {
         <div className="mt-8 flex justify-center gap-6 text-[10px] text-stone-400 font-medium uppercase tracking-widest">
           <span className="flex items-center gap-1"><Info className="w-3 h-3" /> Auto-calculating shrinkage %</span>
           <span className="flex items-center gap-1"><Info className="w-3 h-3" /> Standard 30cm samples</span>
-          <span className="flex items-center gap-1"><Info className="w-3 h-3" /> TRIUMPH Vietnam</span>
+          <span className="flex items-center gap-1"><Info className="w-3 h-3" /> ISO 9001 Compliant</span>
         </div>
       </div>
 
