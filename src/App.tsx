@@ -339,34 +339,33 @@ export default function App() {
     }, 300);
   };
 
-  const exportToPDF = async () => {
+    const exportToPDF = async () => {
     if (!reportRef.current) return;
-    
+
     setIsGeneratingPDF(true);
     try {
       const element = reportRef.current;
-      
-      // Ensure images are loaded
+
+      // Đợi tất cả ảnh load
       const images = element.getElementsByTagName('img');
-      const promises = Array.from(images).map((img: HTMLImageElement) => {
+      const promises = Array.from(images).map(img => {
         if (img.complete) return Promise.resolve();
-        return new Promise((resolve) => {
+        return new Promise(resolve => {
           img.onload = resolve;
           img.onerror = resolve;
         });
       });
       await Promise.all(promises);
-
-      // Small delay to ensure rendering is complete
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 600));
 
       const canvas = await html2canvas(element, {
-        scale: 1.5,
+        scale: 2.0,
         useCORS: true,
         allowTaint: false,
         logging: false,
         backgroundColor: '#ffffff',
-        windowWidth: 1200,
+        width: element.scrollWidth,
+        height: element.scrollHeight,
         onclone: (clonedDoc) => {
           const el = clonedDoc.getElementById('report-container');
           if (el) {
@@ -377,43 +376,39 @@ export default function App() {
           }
         }
       });
-      
-      let imgData;
-      try {
-        imgData = canvas.toDataURL('image/jpeg', 0.92);
-      } catch (e) {
-        console.error('Canvas toDataURL failed:', e);
-        throw new Error('Security restriction: External images without CORS support are blocking PDF generation.');
-      }
-      
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4'
       });
-      
+
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      let heightLeft = pdfHeight;
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
       let position = 0;
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      
-      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight, undefined, 'FAST');
-      heightLeft -= pageHeight;
-      
+
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+
+      heightLeft -= pdfHeight;
+
       while (heightLeft >= 0) {
-        position = heightLeft - pdfHeight;
+        position = -(imgHeight - heightLeft);
         pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight, undefined, 'FAST');
-        heightLeft -= pageHeight;
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
       }
-      
-      pdf.save(`${data.title.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
-    } catch (error: any) {
-      console.error('Error generating PDF:', error);
-      const message = error.message || 'Unknown error';
-      if (window.confirm(`PDF generation failed: ${message}\n\nWould you like to use the browser print option instead?`)) {
+
+      pdf.save(`${data.title.replace(/\s+/g, '_')}_${Date.now()}.pdf`);
+    } catch (error) {
+      console.error('PDF Error:', error);
+      if (window.confirm('PDF generation failed. Use browser Print instead?')) {
         handlePrint();
       }
     } finally {
@@ -957,7 +952,7 @@ export default function App() {
                         </label>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 photo-grid photo-container">
                       <DndContext 
                         sensors={sensors}
                         collisionDetection={closestCenter}
@@ -1192,7 +1187,7 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 photo-grid photo-container">
                         <DndContext 
                           sensors={sensors}
                           collisionDetection={closestCenter}
@@ -1329,13 +1324,81 @@ export default function App() {
         </div>
       </div>
 
-      <style>{`
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
+          <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 12mm 10mm;
+          }
+
+          body { 
+            -webkit-print-color-adjust: exact; 
+            print-color-adjust: exact; 
+          }
+
+          .print\\:hidden { display: none !important; }
+
+          /* Ngăn chia trang bất hợp lý */
+          .print-no-break,
+          section,
+          .photo-container,
+          table,
+          tr,
+          td,
+          th,
+          .grid.grid-cols-2,
+          .grid.md\\:grid-cols-4 {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          table {
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+            border-collapse: collapse;
+            width: 100% !important;
+          }
+
+          thead {
+            display: table-header-group !important;
+          }
+
+          tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+
+          /* Photo grid */
+          .photo-grid {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          header, footer {
+            break-after: avoid !important;
+          }
+
+          /* Giảm font khi in */
+          table {
+            font-size: 9px !important;
+          }
+          th, td {
+            padding: 4px 2px !important;
+          }
+
+          img {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            max-width: 100% !important;
+            height: auto !important;
+          }
         }
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
+
+        /* Class helper */
+        .photo-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 12px;
         }
       `}</style>
 
