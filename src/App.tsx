@@ -1324,83 +1324,74 @@ export default function App() {
         </div>
       </div>
 
-          <style>{`
-        @media print {
-          @page {
-            size: A4 portrait;
-            margin: 12mm 10mm;
-          }
+         <style>{`
+  @media print {
+    @page {
+      size: A4 portrait;
+      margin: 10mm 8mm;
+    }
 
-          body { 
-            -webkit-print-color-adjust: exact; 
-            print-color-adjust: exact; 
-          }
+    .print\\:hidden { display: none !important; }
 
-          .print\\:hidden { display: none !important; }
+    /* Buộc áp dụng cho mọi thứ */
+    body * {
+      visibility: visible !important;
+    }
 
-          /* Ngăn chia trang bất hợp lý */
-          .print-no-break,
-          section,
-          .photo-container,
-          table,
-          tr,
-          td,
-          th,
-          .grid.grid-cols-2,
-          .grid.md\\:grid-cols-4 {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
-          }
+    /* Ẩn toolbar và các phần không cần in */
+    .print\\:hidden,
+    button:not(.print-keep),
+    input[type="file"] {
+      display: none !important;
+    }
 
-          table {
-            page-break-inside: auto !important;
-            break-inside: auto !important;
-            border-collapse: collapse;
-            width: 100% !important;
-          }
+    /* Ngăn cắt bảng và ảnh */
+    .print-no-break,
+    table,
+    tr,
+    section,
+    .photo-container,
+    .photo-grid {
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+    }
 
-          thead {
-            display: table-header-group !important;
-          }
+    thead {
+      display: table-header-group !important;
+    }
 
-          tr {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
+    tr {
+      page-break-inside: avoid !important;
+    }
 
-          /* Photo grid */
-          .photo-grid {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
-          }
+    /* Giảm kích thước để vừa trang A4 */
+    table {
+      font-size: 8.5px !important;
+    }
+    th, td {
+      padding: 3px 2px !important;
+    }
 
-          header, footer {
-            break-after: avoid !important;
-          }
+    img {
+      max-width: 100% !important;
+      height: auto !important;
+      break-inside: avoid !important;
+    }
 
-          /* Giảm font khi in */
-          table {
-            font-size: 9px !important;
-          }
-          th, td {
-            padding: 4px 2px !important;
-          }
+    /* Background trắng sạch */
+    .bg-stone-50, .bg-stone-100, .bg-white {
+      background-color: white !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
 
-          img {
-            break-inside: avoid !important;
-            page-break-inside: avoid !important;
-            max-width: 100% !important;
-            height: auto !important;
-          }
-        }
-
-        /* Class helper */
-        .photo-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-          gap: 12px;
-        }
-      `}</style>
+  .photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+  }
+`}</style>
 
       {/* Image Zoom Modal */}
       {zoomedImage && (
