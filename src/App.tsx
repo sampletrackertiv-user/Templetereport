@@ -339,14 +339,14 @@ export default function App() {
     }, 300);
   };
 
-    const exportToPDF = async () => {
+      const exportToPDF = async () => {
     if (!reportRef.current) return;
 
     setIsGeneratingPDF(true);
     try {
       const element = reportRef.current;
 
-      // Đợi tất cả ảnh load
+      // Đợi tất cả ảnh load xong
       const images = element.getElementsByTagName('img');
       const promises = Array.from(images).map(img => {
         if (img.complete) return Promise.resolve();
@@ -356,10 +356,10 @@ export default function App() {
         });
       });
       await Promise.all(promises);
-      await new Promise(resolve => setTimeout(resolve, 600));
+      await new Promise(resolve => setTimeout(resolve, 800));
 
       const canvas = await html2canvas(element, {
-        scale: 2.0,
+        scale: 2.2,                    // Chất lượng cao
         useCORS: true,
         allowTaint: false,
         logging: false,
@@ -372,7 +372,7 @@ export default function App() {
             el.style.boxShadow = 'none';
             el.style.margin = '0';
             el.style.padding = '20px';
-            el.style.width = '1200px';
+            el.style.width = '1180px';   // Rộng vừa A4
           }
         }
       });
@@ -952,7 +952,7 @@ export default function App() {
                         </label>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 photo-grid photo-container">
+                    <div className="photo-grid photo-container print-no-break">
                       <DndContext 
                         sensors={sensors}
                         collisionDetection={closestCenter}
@@ -1187,7 +1187,7 @@ export default function App() {
                           </div>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 photo-grid photo-container">
+                      <div className="photo-grid photo-container print-no-break">
                         <DndContext 
                           sensors={sensors}
                           collisionDetection={closestCenter}
@@ -1324,74 +1324,73 @@ export default function App() {
         </div>
       </div>
 
-         <style>{`
-  @media print {
-    @page {
-      size: A4 portrait;
-      margin: 10mm 8mm;
-    }
+              <style>{`
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 10mm 8mm;
+          }
 
-    .print\\:hidden { display: none !important; }
+          .print\\:hidden { display: none !important; }
 
-    /* Buộc áp dụng cho mọi thứ */
-    body * {
-      visibility: visible !important;
-    }
+          /* Buộc mọi thứ hiển thị đúng */
+          body * { visibility: visible !important; }
 
-    /* Ẩn toolbar và các phần không cần in */
-    .print\\:hidden,
-    button:not(.print-keep),
-    input[type="file"] {
-      display: none !important;
-    }
+          /* Ngăn cắt bảng và ảnh triệt để */
+          .print-no-break,
+          section,
+          table,
+          tr,
+          td,
+          th,
+          .photo-container,
+          .photo-grid {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
 
-    /* Ngăn cắt bảng và ảnh */
-    .print-no-break,
-    table,
-    tr,
-    section,
-    .photo-container,
-    .photo-grid {
-      break-inside: avoid !important;
-      page-break-inside: avoid !important;
-    }
+          /* Table header lặp lại khi sang trang */
+          thead {
+            display: table-header-group !important;
+          }
 
-    thead {
-      display: table-header-group !important;
-    }
+          tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
 
-    tr {
-      page-break-inside: avoid !important;
-    }
+          /* Giảm kích thước bảng để vừa A4 */
+          table {
+            font-size: 8.5px !important;
+            width: 100% !important;
+          }
+          th, td {
+            padding: 3px 2px !important;
+          }
 
-    /* Giảm kích thước để vừa trang A4 */
-    table {
-      font-size: 8.5px !important;
-    }
-    th, td {
-      padding: 3px 2px !important;
-    }
+          /* Ảnh không bị cắt */
+          img {
+            max-width: 100% !important;
+            height: auto !important;
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
 
-    img {
-      max-width: 100% !important;
-      height: auto !important;
-      break-inside: avoid !important;
-    }
+          /* Background sạch */
+          .bg-stone-50, .bg-stone-100, .bg-white, .bg-stone-900 {
+            background-color: white !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+        }
 
-    /* Background trắng sạch */
-    .bg-stone-50, .bg-stone-100, .bg-white {
-      background-color: white !important;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
-    }
-  }
-
-  .photo-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 10px;
-  }
-`}</style>
+        /* Grid ảnh đẹp hơn */
+        .photo-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+          gap: 10px;
+        }
+      `}</style>
 
       {/* Image Zoom Modal */}
       {zoomedImage && (
