@@ -507,7 +507,81 @@ export default function App() {
       }
     }));
   };
+  const exportToPDFLandscape = async () => {
+    if (!reportRef.current) return;
 
+    setIsGeneratingPDF(true);
+    try {
+      const element = reportRef.current;
+
+      // Đợi ảnh load
+      const images = element.getElementsByTagName('img');
+      const promises = Array.from(images).map(img => {
+        if (img.complete) return Promise.resolve();
+        return new Promise(resolve => {
+          img.onload = resolve;
+          img.onerror = resolve;
+        });
+      });
+      await Promise.all(promises);
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      const canvas = await html2canvas(element, {
+        scale: 2.0,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        backgroundColor: '#ffffff',
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.getElementById('report-container');
+          if (el) {
+            el.style.boxShadow = 'none';
+            el.style.margin = '0';
+            el.style.padding = '15px';
+            el.style.width = '1600px';        // Rộng hơn để bảng vừa khi ngang
+            el.style.minWidth = '1600px';
+          }
+        }
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+
+      // Tạo PDF Landscape (A4 ngang)
+      const pdf = new jsPDF({
+        orientation: 'landscape',   // ← Quan trọng: ngang
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();   // ~297mm
+      const pdfHeight = pdf.internal.pageSize.getHeight(); // ~210mm
+
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pdfHeight;
+
+      while (heightLeft >= 0) {
+        position = -(imgHeight - heightLeft);
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+      }
+
+      pdf.save(`${data.title.replace(/\s+/g, '_')}_Landscape_${Date.now()}.pdf`);
+    } catch (error) {
+      console.error('Landscape PDF Error:', error);
+      alert('Lỗi khi tạo PDF ngang. Thử dùng Print (Ctrl+P) và chọn Landscape trong trình in.');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
   const handlePhotoUpload = (method: 1 | 2, rowId: string, step: 1 | 2 | null, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
@@ -649,6 +723,18 @@ export default function App() {
                   <Download className="w-4 h-4" />
                 )}
                 {isGeneratingPDF ? 'Generating...' : 'Export PDF'}
+              </button>
+                            <button
+                onClick={exportToPDFLandscape}
+                disabled={isGeneratingPDF}
+                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isGeneratingPDF ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                PDF Ngang (A4 Landscape)
               </button>
             </div>
           </div>
@@ -1324,67 +1410,48 @@ export default function App() {
         </div>
       </div>
 
-              <style>{`
+            <style>{`
         @media print {
           @page {
-            size: A4 portrait;
+            size: A4 portrait;   /* Mặc định dọc */
             margin: 10mm 8mm;
+          }
+          @page :landscape {
+            size: A4 landscape;  /* Hỗ trợ ngang khi user chọn trong Print Dialog */
+            margin: 8mm 10mm;
           }
 
           .print\\:hidden { display: none !important; }
 
-          /* Buộc mọi thứ hiển thị đúng */
           body * { visibility: visible !important; }
 
-          /* Ngăn cắt bảng và ảnh triệt để */
-          .print-no-break,
-          section,
-          table,
-          tr,
-          td,
-          th,
-          .photo-container,
-          .photo-grid {
+          .print-no-break, section, table, tr, td, th, .photo-container, .photo-grid {
             break-inside: avoid !important;
             page-break-inside: avoid !important;
           }
 
-          /* Table header lặp lại khi sang trang */
-          thead {
-            display: table-header-group !important;
-          }
+          thead { display: table-header-group !important; }
 
-          tr {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-          }
+          tr { page-break-inside: avoid !important; }
 
-          /* Giảm kích thước bảng để vừa A4 */
           table {
-            font-size: 8.5px !important;
+            font-size: 8px !important;
             width: 100% !important;
           }
-          th, td {
-            padding: 3px 2px !important;
-          }
+          th, td { padding: 3px 2px !important; }
 
-          /* Ảnh không bị cắt */
           img {
             max-width: 100% !important;
             height: auto !important;
             break-inside: avoid !important;
-            page-break-inside: avoid !important;
           }
 
-          /* Background sạch */
-          .bg-stone-50, .bg-stone-100, .bg-white, .bg-stone-900 {
+          .bg-stone-50, .bg-stone-100, .bg-white {
             background-color: white !important;
             -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
           }
         }
 
-        /* Grid ảnh đẹp hơn */
         .photo-grid {
           display: grid;
           grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
